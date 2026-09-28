@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Parametric rainfall insurance demo: live instrument panel, policy ledger and oracle log for a weather-triggered smart contract payout.">
+<title>Squall Line — Parametric Rainfall Cover</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8C%A7%EF%B8%8F%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zilla+Slab:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* --- Default (light / "day chart") tokens --- */
+    --bg: #EDE3CC;
+    --bg-2: #E4D8BC;
+    --surface: #16233B;
+    --surface-ink: #E7E0CC;
+    --surface-muted: #8FA0AE;
+    --ink: #221F1A;
+    --ink-muted: #6B6355;
+    --brass: #93652E;
+    --brass-bright: #B98A46;
+    --clay: #9C3B26;
+    --clay-bright: #C1502F;
+    --line: rgba(34, 31, 26, 0.16);
+    --line-strong: rgba(34, 31, 26, 0.32);
+    --needle: var(--brass);
+    color-scheme: light;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #121B2C;
+      --bg-2: #0D1420;
+      --surface: #E7DEC6;
+      --surface-ink: #1B1812;
+      --surface-muted: #6B6355;
+      --ink: #E7E0CC;
+      --ink-muted: #9AA7B4;
+      --brass: #C9974D;
+      --brass-bright: #E0AE63;
+      --clay: #D9694A;
+      --clay-bright: #F0805F;
+      --line: rgba(231, 224, 198, 0.14);
+      --line-strong: rgba(231, 224, 198, 0.28);
+      --needle: var(--brass);
+      color-scheme: dark;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #121B2C;
+    --bg-2: #0D1420;
+    --surface: #E7DEC6;
+    --surface-ink: #1B1812;
+    --surface-muted: #6B6355;
+    --ink: #E7E0CC;
+    --ink-muted: #9AA7B4;
+    --brass: #C9974D;
+    --brass-bright: #E0AE63;
+    --clay: #D9694A;
+    --clay-bright: #F0805F;
+    --line: rgba(231, 224, 198, 0.14);
+    --line-strong: rgba(231, 224, 198, 0.28);
+    --needle: var(--brass);
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+
+  html {
+    scroll-padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    background-image:
+      linear-gradient(var(--line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    background-size: 28px 28px;
+    color: var(--ink);
+    font-family: 'Zilla Slab', Georgia, 'Times New Roman', serif;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .mono {
+    font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  .wrap {
+    max-width: 1040px;
+    margin: 0 auto;
+    padding: 34px 20px 64px;
+  }
+
+  /* ---------- Header / chart title block ---------- */
+  .titleblock {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 16px;
+    flex-wrap: wrap;
+    border-bottom: 2px solid var(--ink);
+    padding-bottom: 14px;
+    margin-bottom: 6px;
+  }
+  .titleblock h1 {
+    margin: 0;
+    font-family: 'Zilla Slab', serif;
+    font-weight: 700;
+    font-size: clamp(28px, 4vw, 40px);
+    line-height: 1.05;
+    letter-spacing: -0.01em;
+  }
+  .policy-no {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    color: var(--ink-muted);
+    white-space: nowrap;
+    padding-bottom: 6px;
+  }
+  .meta-row {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12.5px;
+    color: var(--ink-muted);
+    padding: 10px 0 26px;
+    border-bottom: 1px solid var(--line-strong);
+    margin-bottom: 28px;
+  }
+  .meta-row span b { color: var(--ink); font-weight: 600; }
+
+  /* ---------- Layout ---------- */
+  .grid {
+    display: grid;
+    grid-template-columns: 1.15fr 1fr;
+    gap: 22px;
+  }
+  @media (max-width: 800px) {
+    .grid { grid-template-columns: 1fr; }
+  }
+
+  .panel {
+    border: 1px solid var(--line-strong);
+    background: transparent;
+    padding: 22px;
+  }
+  .panel-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    color: var(--ink-muted);
+    text-transform: uppercase;
+    margin: 0 0 18px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .panel-label::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--line-strong);
+  }
+
+  /* ---------- Instrument panel ---------- */
+  .gauge-row {
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    flex-wrap: wrap;
+  }
+  .reading {
+    flex: 1;
+    min-width: 160px;
+  }
+  .reading .num {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: clamp(38px, 6vw, 52px);
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: -0.01em;
+  }
+  .reading .unit {
+    font-size: 16px;
+    color: var(--ink-muted);
+    font-weight: 400;
+  }
+  .reading .caption {
+    margin-top: 6px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    color: var(--ink-muted);
+  }
+  .reading .caption.alert { color: var(--clay-bright); font-weight: 600; }
+
+  svg.dial { display: block; }
+  .dial .arc-bg { fill: none; stroke: var(--line-strong); stroke-width: 10; }
+  .dial .arc-fill { fill: none; stroke: var(--brass); stroke-width: 10; stroke-linecap: round; transition: stroke-dasharray 700ms cubic-bezier(.3,.7,.2,1), stroke 400ms; }
+  .dial .threshold-tick { stroke: var(--clay); stroke-width: 3; }
+  .dial .needle { stroke: var(--ink); stroke-width: 2.5; transform-origin: 70px 70px; transition: transform 700ms cubic-bezier(.3,.7,.2,1); }
+  .dial .hub { fill: var(--ink); }
+  .dial.triggered .arc-fill { stroke: var(--clay-bright); }
+  .dial.triggered .needle { stroke: var(--clay-bright); }
+
+  .strip {
+    margin-top: 22px;
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 64px;
+    border-bottom: 1px solid var(--line-strong);
+    padding-bottom: 2px;
+    overflow: hidden;
+  }
+  .strip .bar {
+    flex: 1 0 auto;
+    width: 5px;
+    background: var(--brass);
+    opacity: 0.55;
+    transition: height 400ms ease, background 400ms;
+  }
+  .strip .bar.hi { background: var(--clay-bright); opacity: 0.85; }
+
+  .updated-row {
+    margin-top: 10px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11.5px;
+    color: var(--ink-muted);
+  }
+
+  .controls {
+    margin-top: 24px;
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .switch {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    border: 1px solid var(--ink);
+    background: var(--ink);
+    color: var(--bg);
+    padding: 12px 18px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: transform 120ms ease, opacity 200ms;
+  }
+  .switch:active { transform: translateY(1px); }
+  .switch .led {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--brass-bright);
+    box-shadow: 0 0 6px var(--brass-bright);
+  }
+  .switch.secondary {
+    background: transparent;
+    color: var(--ink);
+  }
+  .switch.secondary .led { background: var(--ink-muted); box-shadow: none; }
+  .switch:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* ---------- Policy ledger ---------- */
+  .ledger-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    padding: 9px 0;
+    border-bottom: 1px dotted var(--line-strong);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13.5px;
+  }
+  .ledger-row:last-of-type { border-bottom: none; }
+  .ledger-row .k { color: var(--ink-muted); }
+  .ledger-row .v { font-weight: 600; text-align: right; }
+  .ledger-row .v.alert { color: var(--clay-bright); }
+
+  .stamp-zone {
+    margin-top: 20px;
+    padding-top: 18px;
+    border-top: 1px solid var(--line-strong);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .stamp-zone .lbl {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .stamp {
+    font-family: 'Zilla Slab', serif;
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 6px 14px;
+    border: 2.5px solid var(--brass);
+    color: var(--brass);
+    transform: rotate(-3deg);
+    transition: all 300ms ease;
+  }
+  .stamp.triggered {
+    border-color: var(--clay-bright);
+    color: var(--clay-bright);
+    transform: rotate(-3deg) scale(1.06);
+    animation: stampdown 420ms cubic-bezier(.2,1.4,.4,1);
+  }
+  @keyframes stampdown {
+    0% { transform: rotate(-3deg) scale(2.2); opacity: 0; }
+    60% { opacity: 1; }
+    100% { transform: rotate(-3deg) scale(1.06); opacity: 1; }
+  }
+
+  /* ---------- Oracle log ---------- */
+  .log-panel { margin-top: 22px; }
+  .log {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12.5px;
+    line-height: 1.9;
+    max-height: 220px;
+    overflow-y: auto;
+    color: var(--ink-muted);
+  }
+  .log .entry { white-space: pre-wrap; word-break: break-word; }
+  .log .entry b { color: var(--ink); font-weight: 600; }
+  .log .entry.trig b { color: var(--clay-bright); }
+  .log a { color: var(--brass); text-decoration: underline; }
+  .log::-webkit-scrollbar { width: 7px; }
+  .log::-webkit-scrollbar-thumb { background: var(--line-strong); }
+
+  footer {
+    margin-top: 30px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-muted);
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="titleblock">
+    <h1>Squall Line — Parametric Rainfall Cover</h1>
+    <div class="policy-no">POLICY No. 0042</div>
+  </div>
+  <div class="meta-row">
+    <span>Station: <b>Miami-Dade, FL</b></span>
+    <span>Instrument feed: <b id="feedName">mock backend</b></span>
+    <span>Mode: <b id="modeName">simulation</b></span>
+    <span>Coverage window: <b>7 days</b></span>
+    <span>Escrow asset: <b>mUSDC (testnet)</b></span>
+  </div>
+
+  <div class="grid">
+
+    <!-- Instrument panel -->
+    <div class="panel">
+      <p class="panel-label">Instrument panel — live rainfall</p>
+
+      <div class="gauge-row">
+        <div class="reading">
+          <div class="num" id="readingNum">12.40<span class="unit"> mm</span></div>
+          <div class="caption" id="readingCaption">24h accumulation · trigger above 50.00 mm</div>
+        </div>
+        <svg class="dial" id="dial" width="140" height="82" viewBox="0 0 140 82">
+          <path class="arc-bg" d="M 10 70 A 60 60 0 0 1 130 70" />
+          <path class="arc-fill" id="arcFill" d="M 10 70 A 60 60 0 0 1 130 70"
+                stroke-dasharray="0 189" />
+          <line class="threshold-tick" id="thresholdTick" x1="107" y1="30" x2="113" y2="20" />
+          <line class="needle" id="needle" x1="70" y1="70" x2="70" y2="20" />
+          <circle class="hub" cx="70" cy="70" r="4" />
+        </svg>
+      </div>
+
+      <div class="strip" id="strip"></div>
+      <div class="updated-row">Last oracle update: <span id="lastUpdated" class="mono">—</span></div>
+
+      <div class="controls">
+        <button class="switch" id="simBtn"><span class="led"></span>Simulate weather event</button>
+        <button class="switch secondary" id="resetBtn"><span class="led"></span>Reset station</button>
+      </div>
+    </div>
+
+    <!-- Policy ledger -->
+    <div class="panel">
+      <p class="panel-label">Policy ledger</p>
+
+      <div class="ledger-row"><span class="k">Holder</span><span class="v mono" id="holderAddr">0xA31…C9F</span></div>
+      <div class="ledger-row"><span class="k">Payout amount</span><span class="v mono" id="payoutAmt">500.00 mUSDC</span></div>
+      <div class="ledger-row"><span class="k">Trigger condition</span><span class="v mono" id="condText">rainfall &gt; 50.00 mm</span></div>
+      <div class="ledger-row"><span class="k">Escrow contract</span><span class="v mono" id="contractAddr">0x7Fb2…1eD4</span></div>
+      <div class="ledger-row"><span class="k">Window closes</span><span class="v mono" id="windowCloses">—</span></div>
+
+      <div class="stamp-zone">
+        <span class="lbl">Status</span>
+        <span class="stamp" id="stamp">Active</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Oracle log -->
+  <div class="panel log-panel">
+    <p class="panel-label">Oracle log</p>
+    <div class="log" id="log"></div>
+  </div>
+
+  <footer>Testnet demo. With no contract configured, readings are simulated in your browser.</footer>
+</div>
+
+<script>
+(function () {
+  var THRESHOLD = 50.00;
+  var DIAL_MAX = 80.00;
+
+  var mode = 'demo';          // 'demo' (client-side) or 'live' (reads /api/status)
+  var explorer = '';
+  var simulateEnabled = false;
+  var sandbox = false;        // live mode, but running the local storm animation
+  var busy = false;
+  var lastUpdatedAt = 0;
+
+  var state = {
+    rainfall: 12.40,
+    status: 'Active',
+    hasPolicy: true,
+    history: [12.40, 9.10, 14.80, 11.00, 13.60, 10.20, 15.40, 8.90],
+  };
+
+  var $ = function (id) { return document.getElementById(id); };
+  var els = {
+    readingNum: $('readingNum'), readingCaption: $('readingCaption'),
+    arcFill: $('arcFill'), needle: $('needle'), dial: $('dial'),
+    thresholdTick: $('thresholdTick'), strip: $('strip'),
+    lastUpdated: $('lastUpdated'), simBtn: $('simBtn'), resetBtn: $('resetBtn'),
+    stamp: $('stamp'), log: $('log'), feedName: $('feedName'), modeName: $('modeName'),
+    holder: $('holderAddr'), payout: $('payoutAmt'), cond: $('condText'),
+    contract: $('contractAddr'), windowCloses: $('windowCloses'),
+  };
+
+  function timeStr(d) { return d.toTimeString().slice(0, 8); }
+  function shortAddr(a) { return a ? a.slice(0, 6) + '…' + a.slice(-4) : '—'; }
+  function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
+  function txLink(hash) {
+    var label = 'tx ' + hash.slice(0, 8) + '…';
+    return explorer ? '<a href="' + esc(explorer) + '/tx/' + esc(hash) + '" target="_blank" rel="noopener">' + label + '</a>' : label;
+  }
+
+  function logLine(html, isTrigger) {
+    var row = document.createElement('div');
+    row.className = 'entry' + (isTrigger ? ' trig' : '');
+    row.innerHTML = '<b>' + timeStr(new Date()) + '</b>  ' + html;
+    els.log.prepend(row);
+    while (els.log.children.length > 40) els.log.removeChild(els.log.lastChild);
+  }
+
+  function pct(v) { return Math.max(0, Math.min(1, v / DIAL_MAX)); }
+
+  function renderDial(v) {
+    var arcLen = 189;
+    els.arcFill.setAttribute('stroke-dasharray', (arcLen * pct(v)).toFixed(1) + ' ' + arcLen);
+    els.needle.style.transform = 'rotate(' + (-90 + pct(v) * 180) + 'deg)';
+  }
+
+  function placeThresholdTick() {
+    // Point on the r=60 arc centred at (70,70); angle measured from the left end.
+    var a = Math.PI * (1 - pct(THRESHOLD));
+    var cx = 70 + 60 * Math.cos(a), cy = 70 - 60 * Math.sin(a);
+    var ix = 70 + 50 * Math.cos(a), iy = 70 - 50 * Math.sin(a);
+    var ox = 70 + 68 * Math.cos(a), oy = 70 - 68 * Math.sin(a);
+    els.thresholdTick.setAttribute('x1', ix.toFixed(1));
+    els.thresholdTick.setAttribute('y1', iy.toFixed(1));
+    els.thresholdTick.setAttribute('x2', ox.toFixed(1));
+    els.thresholdTick.setAttribute('y2', oy.toFixed(1));
+  }
+
+  function renderStrip() {
+    els.strip.innerHTML = '';
+    var maxV = Math.max(DIAL_MAX, Math.max.apply(null, state.history));
+    state.history.slice(-40).forEach(function (v) {
+      var bar = document.createElement('div');
+      bar.className = 'bar' + (v > THRESHOLD ? ' hi' : '');
+      bar.style.height = Math.max(4, (v / maxV) * 60) + 'px';
+      els.strip.appendChild(bar);
+    });
+  }
+
+  function updateButtons() {
+    els.simBtn.disabled = busy || state.status !== 'Active' || !state.hasPolicy;
+    els.resetBtn.disabled = busy;
+  }
+
+  function render() {
+    var trig = state.status === 'Triggered';
+    els.readingNum.innerHTML = state.rainfall.toFixed(2) + '<span class="unit"> mm</span>';
+    els.readingCaption.textContent = (mode === 'live' && !sandbox ? 'latest oracle reading' : '24h accumulation') +
+      ' · trigger above ' + THRESHOLD.toFixed(2) + ' mm';
+    els.readingCaption.classList.toggle('alert', state.rainfall > THRESHOLD);
+    els.dial.classList.toggle('triggered', trig);
+    placeThresholdTick();
+    renderDial(state.rainfall);
+    renderStrip();
+    els.stamp.textContent = state.status;
+    els.stamp.classList.toggle('triggered', trig);
+    els.cond.innerHTML = 'rainfall &gt; ' + THRESHOLD.toFixed(2) + ' mm';
+    updateButtons();
+  }
+
+  function pushReading(v) {
+    state.rainfall = v;
+    state.history.push(v);
+    if (state.history.length > 60) state.history.shift();
+    els.lastUpdated.textContent = timeStr(new Date());
+    render();
+  }
+
+  function fetchJson(url, opts) {
+    return fetch(url, opts).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (body) {
+        if (!r.ok) throw new Error(body.error || ('Request failed (' + r.status + ')'));
+        return body;
+      });
+    });
+  }
+
+  /* ---------------- Live mode ---------------- */
+
+  function applyStatus(s) {
+    if (sandbox) return;
+    explorer = s.explorer || explorer;
+    simulateEnabled = !!s.simulateEnabled;
+    els.contract.textContent = shortAddr(s.contract);
+
+    var p = s.policy;
+    if (!p) {
+      state.hasPolicy = false;
+      state.status = 'No policy';
+      els.holder.textContent = '—';
+      els.payout.textContent = '—';
+      els.windowCloses.textContent = '—';
+    } else {
+      state.hasPolicy = true;
+      state.status = p.status;
+      THRESHOLD = p.thresholdMm;
+      els.holder.textContent = shortAddr(p.holder);
+      els.payout.textContent = Number(p.payout).toFixed(2) + ' mUSDC';
+      els.windowCloses.textContent = new Date(p.windowEnd * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    }
+
+    if (s.updatedAt !== lastUpdatedAt) {
+      if (lastUpdatedAt !== 0) logLine('WeatherPosted <span class="mono">rainfall=' + s.rainfallMm.toFixed(2) + 'mm</span>');
+      lastUpdatedAt = s.updatedAt;
+      state.history.push(s.rainfallMm);
+      if (state.history.length > 60) state.history.shift();
+    }
+    state.rainfall = s.rainfallMm;
+    els.lastUpdated.textContent = s.updatedAt ? timeStr(new Date(s.updatedAt * 1000)) : '—';
+    render();
+  }
+
+  function poll() {
+    if (document.hidden || busy || sandbox) return Promise.resolve();
+    return fetchJson('/api/status').then(applyStatus).catch(function (e) {
+      logLine('Status refresh failed: ' + esc(e.message));
+    });
+  }
+
+  function liveSimulate() {
+    busy = true; updateButtons();
+    logLine('Sending storm reading to the oracle — waiting for confirmations…');
+    fetchJson('/api/simulate', { method: 'POST' }).then(function (r) {
+      logLine('WeatherPosted <span class="mono">rainfall=' + r.rainfallMm.toFixed(2) + 'mm</span> ' + txLink(r.updateTx));
+      logLine('PolicyTriggered — payout released ' + txLink(r.settleTx), true);
+    }).catch(function (e) {
+      logLine('Simulation failed: ' + esc(e.message));
+    }).then(function () {
+      busy = false; return poll();
+    });
+  }
+
+  function liveReset() {
+    busy = true; updateButtons();
+    logLine('Re-arming station — this can take a minute on testnet…');
+    fetchJson('/api/reset', { method: 'POST' }).then(function (r) {
+      logLine('Station reset ' + txLink(r.updateTx) + (r.policyTx ? ' · new policy ' + txLink(r.policyTx) : ''));
+    }).catch(function (e) {
+      logLine('Reset failed: ' + esc(e.message));
+    }).then(function () {
+      busy = false; return poll();
+    });
+  }
+
+  /* ---------------- Local (demo) simulation ---------------- */
+
+  function localSimulate() {
+    if (state.status !== 'Active') return;
+    busy = true; updateButtons();
+    var steps = [22, 31, 40, 47, 55, 63], i = 0;
+    logLine('Simulated storm cell initiated over station radius');
+    var timer = setInterval(function () {
+      if (i >= steps.length) {
+        clearInterval(timer);
+        logLine('checkAndSettle(policyId=0) called');
+        setTimeout(function () {
+          state.status = 'Triggered';
+          busy = false;
+          render();
+          logLine('PolicyTriggered — payout <span class="mono">500.00 mUSDC</span> released to holder', true);
+        }, 500);
+        return;
+      }
+      var v = steps[i] + (Math.random() * 2 - 1);
+      pushReading(Math.round(v * 100) / 100);
+      logLine('WeatherPosted <span class="mono">rainfall=' + v.toFixed(2) + 'mm</span>');
+      i++;
+    }, 650);
+  }
+
+  function localReset() {
+    state.status = 'Active';
+    state.hasPolicy = true;
+    pushReading(12.40 + Math.round((Math.random() * 6 - 3) * 100) / 100);
+    logLine('Station reset — new coverage window opened');
+  }
+
+  /* ---------------- Wiring ---------------- */
+
+  els.simBtn.addEventListener('click', function () {
+    if (mode === 'live' && simulateEnabled && !sandbox) return liveSimulate();
+    if (mode === 'live') sandbox = true; // on-chain simulate is off: run the local animation
+    localSimulate();
+  });
+
+  els.resetBtn.addEventListener('click', function () {
+    if (mode === 'live' && simulateEnabled && !sandbox) return liveReset();
+    if (mode === 'live') { sandbox = false; lastUpdatedAt = 0; logLine('Back to live chain data'); return poll(); }
+    localReset();
+  });
+
+  function startDemo() {
+    mode = 'demo';
+    els.feedName.textContent = 'mock backend';
+    els.modeName.textContent = 'simulation';
+    els.contract.textContent = '0x7Fb2…1eD4';
+    els.holder.textContent = '0xA31…C9F';
+    els.payout.textContent = '500.00 mUSDC';
+    els.windowCloses.textContent = new Date(Date.now() + 7 * 864e5).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    els.lastUpdated.textContent = timeStr(new Date());
+    logLine('Oracle bridge online · watching station feed');
+    render();
+    // Ambient drift keeps the panel alive; it never approaches the threshold on its own.
+    setInterval(function () {
+      if (state.status !== 'Active' || busy) return;
+      var next = Math.min(30, Math.max(2, state.rainfall + (Math.random() * 4 - 1.8)));
+      next = Math.round(next * 100) / 100;
+      pushReading(next);
+      logLine('WeatherPosted <span class="mono">rainfall=' + next.toFixed(2) + 'mm</span>');
+    }, 5200);
+  }
+
+  function startLive(s) {
+    mode = 'live';
+    els.feedName.textContent = 'oracle → ' + (s.network || 'testnet');
+    els.modeName.textContent = 'live on ' + (s.network || 'testnet');
+    state.history = [];
+    logLine('Connected to contract ' + esc(shortAddr(s.contract)) + ' on ' + esc(s.network || 'testnet'));
+    applyStatus(s);
+    setInterval(poll, 8000);
+  }
+
+  fetchJson('/api/status').then(function (s) {
+    if (s.mode === 'live') startLive(s); else startDemo();
+  }).catch(function () {
+    startDemo();
+  });
+})();
+</script>
+</body>
+</html>

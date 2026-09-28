@@ -5,9 +5,6 @@
   "buildCommand": null,
   "outputDirectory": "public",
   "cleanUrls": true,
-  "functions": {
-    "api/**/*.js": { "maxDuration": 60 }
-  },
   "crons": [
     { "path": "/api/oracle", "schedule": "0 12 * * *" }
   ],
